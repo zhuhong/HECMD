@@ -20,6 +20,7 @@ K= 1.3806504e-23
 '''It's the Boltzmann constant'''
 HBA= 1.05457148e-34
 '''It's the Planck constant'''
+
 RC= 8.3145
 '''It's the idea gas constant'''
 MP=1.66055402e-27
@@ -78,6 +79,63 @@ def Print_Index(index_list):
     '''Print the index list like Gromacs does.'''
     for i in range(len(index_list)):
         print "Group %4d (%15s) has %6d elements" %(i , index_list[i].group_name , len(index_list[i].group_list))
+
+def histogram_2D(list_1,list_2,BINS):
+    length= len(list_1)
+    # print list_1
+    # print length
+    # print np.shape(list_1)
+    # sys.exit()
+    min_1 = np.amin(list_1)
+    min_2 = np.amin(list_2)
+    max_1 = np.amax(list_1)
+    max_2 = np.amax(list_2)
+    _interval_1 = (max_1 - min_1) / BINS
+    _interval_2 = (max_2 - min_2) / BINS
+    # print _interval_1,_interval_2
+    _hist = np.zeros((BINS,BINS),dtype = np.int32   )
+    _prob = np.zeros((BINS,BINS),dtype = np.float32 )
+    for i in range(length):
+        # print int((list_1[i]-min_1)/_interval_1),int((list_2[i]-min_2)/_interval_2)
+        try:
+            _hist[int((list_1[i]-min_1)/_interval_1),int((list_2[i]-min_2)/_interval_2)] += 1
+        except:
+            pass
+    for i in range(BINS):
+        for j in range(BINS):
+            _prob[i,j] = (_hist[i,j]) / (length*_interval_1*_interval_2)
+            # if _prob[i,j] == 0:
+            #     _prob[i,j] = 1e-10
+
+    int_prob = 0.0
+    # print _prob
+    # sys.exit()
+    for i in range(BINS):
+        for j in range(BINS):
+            if _prob[i,j] > 0.0:
+                int_prob += math.log(_prob[i,j]*1e20/(MP))*_prob[i,j] * _interval_1 * _interval_2
+
+    return int_prob
+
+
+def R_VALUE(prob,eig_value,bin_list,BINS):
+
+    _fa = [ math.sqrt(abs(-1*eig_value*math.log(_prob_item*math.sqrt(2*math.pi*eig_value)))) for _prob_item in prob ]
+    _x = np.zeros([len(prob)],dtype=np.float32)
+    _y = np.zeros([len(prob)],dtype=np.float32)
+    for kk in range(len(prob)):
+        _x[kk] = 0.5*(bin_list[kk]+bin_list[kk+1])
+        if _x[kk] < 0 :
+            _y[kk] = -1* _fa[kk]
+        else:
+            _y[kk] = _fa[kk]
+    _x_ave = sum(_x) / BINS
+    _y_ave = sum(_y) / BINS
+    _rxy = sum([(_x[kk]-_x_ave)*(_y[kk]-_y_ave) for kk in range(BINS)])\
+    /math.sqrt(sum([(_x[kk]-_x_ave)**2 for kk in range(BINS)])\
+        *(sum([(_y[kk]-_y_ave)**2 for kk in range(BINS)])))   
+
+    return _rxy
 
 
 def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7):
@@ -140,50 +198,55 @@ def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7):
         for j in range(_mat_size):
             _delta_temp[j,i]=traj_data2[i][j]-traj_ave[j]
     bp=np.matrix(_bp_temp)*np.matrix(_delta_temp)
+    bp = np.array(bp)
     # for i in range(truncate_num):
         # np.savetxt("dist_%d.dat" %(i+1),bp[i])
     anh=np.zeros([truncate_num],dtype=np.float32)
-    _beta_const = 0.5*(1-math.log(H*HBA/K/temperature))
+
+    _beta_const = 0.5*(1-math.log(HBA**2/(K*temperature*2*math.pi)))
     BIN_NUM = 100
     rxy=np.zeros([truncate_num],dtype=np.float32)
+    
     # print _beta_const
     for m in range(truncate_num):
         _hist,_bins=np.histogram(bp[m],bins=np.linspace(np.amin(bp[m]),np.amax(bp[m]),BIN_NUM+1))   
-        _prob = [(_item+0.01)/sum([_hist[i]*(_bins[i+1]-_bins[i]) for i in range(len(_hist))]) for _item in _hist]
-        _int_prob =sum([math.log(_prob[i]*1e10/math.sqrt(MP))*_prob[i]*(_bins[i+1]-_bins[i]) for i in range(len(_hist))]) #care the unit
-        # print _prob
-       # for f(a)
-        _fa = [ math.sqrt(abs(-1*eigenvalues[m]*math.log(_prob_item*math.sqrt(2*math.pi*eigenvalues[m])))) for _prob_item in _prob ]
-        _x = np.zeros([len(_prob)],dtype=np.float32)
-        _y = np.zeros([len(_prob)],dtype=np.float32)
-        for kk in range(len(_prob)):
-            _x[kk] = 0.5*(_bins[kk]+_bins[kk+1])
-            if _x[kk] < 0 :
-                _y[kk] = -1* _fa[kk]
-            else:
-                _y[kk] = _fa[kk]
-        _x_ave = sum(_x) / BIN_NUM
-        _y_ave = sum(_y) / BIN_NUM
-        rxy[m] = sum([(_x[kk]-_x_ave)*(_y[kk]-_y_ave) for kk in range(BIN_NUM)])\
-        /math.sqrt(sum([(_x[kk]-_x_ave)**2 for kk in range(BIN_NUM)])\
-            *(sum([(_y[kk]-_y_ave)**2 for kk in range(BIN_NUM)])))
-        
+        _prob = [(_item)/sum([_hist[i]*(_bins[i+1]-_bins[i]) for i in range(len(_hist))]) for _item in _hist]
+        _int_prob = 0.0
+        for j in range(BIN_NUM):
+            if _prob[j] > 0.0:
+                _int_prob += math.log(_prob[i]*1e10/math.sqrt(MP))*_prob[j] *(_bins[i+1]-_bins[i])
+        # _int_prob =sum([math.log(_prob[i]*1e10/math.sqrt(MP))*_prob[i]*(_bins[i+1]-_bins[i]) for i in range(len(_hist))]) #care the unit
+
+        rxy[m] = R_VALUE(_prob,eigenvalues[m],_bins,BIN_NUM)      
 
         anh[m] = _beta_const - _int_prob
     # print anh
     np.savetxt("R_value.dat",rxy)
     print "Writed R vaule to R_value.dat"
     # np.savetxt('anh.dat',anh)     
-    _delta = 0.
+    _delta_ah = 0.
     for m in range(10):
-        _delta += s_quantum[m] - anh[m]
-    Delta_S = _delta * RC
-    print "\t Delta_anh: %8.2f J/mol/K, %8.2f Kcal/mol." %(Delta_S, Delta_S/4186.8*temperature)
-    print "After correction: %8.2f J/mol/K, %8.2f Kcal/mol." %(total_entropy- Delta_S, (total_entropy-Delta_S)/4186.8*temperature)
+        _delta_ah += s_quantum[m] - anh[m]
+    Delta_ah = _delta_ah * RC
+    print "\t Delta_anh: %8.2f J/mol/K, %8.2f Kcal/mol." %(Delta_ah, Delta_ah/4186.8*temperature)
+    print "After correction: %8.2f J/mol/K, %8.2f Kcal/mol." %(total_entropy- Delta_ah, (total_entropy-Delta_ah)/4186.8*temperature)
+
+
+    print "step 7: Calculating the pairwise correlation"
+
+    delta_pch = np.zeros((10,10),dtype=np.float32) # pairwise correlation for each unit
+    for m in range(10-1):
+        for n in range(m+1,10):
+            delta_pch[m,n] = ( 2* _beta_const - histogram_2D(bp[m],bp[n],20) ) - anh[m] - anh[n]
+            print ( 2* _beta_const - histogram_2D(bp[m],bp[n],20) ),anh[m],anh[n]
+
+    Delta_pch = np.sum(delta_pch) * RC
+    print Delta_pch 
 
 
 
-def Main(top_file,traj_file,index_file,temperature=300,skip=1,begin=0,end=-1,CYCLES=1):
+
+def Main(top_file,traj_file,index_file,temperature=300,begin=0,end=-1,CYCLES=1):
     '''
     Add some words here.
     '''
@@ -204,9 +267,9 @@ def Main(top_file,traj_file,index_file,temperature=300,skip=1,begin=0,end=-1,CYC
 #    print chose_group
 
     if end== -1:
-        nframes=U.trajectory.numframes-begin
+        nframes=(U.trajectory.numframes-begin)
     elif end > begin:
-        nframes=end-begin
+        nframes=(end-begin)
     elif begin > U.trajectory.numframes:
         print "The begin is out of the range of trajectory frames."
         sys.exit()
@@ -225,19 +288,23 @@ def Main(top_file,traj_file,index_file,temperature=300,skip=1,begin=0,end=-1,CYC
     POINT=0
     ##  POINT used to replace the U.trajectory.frame in this part.
     for ts in U.trajectory:
-        POINT += 1
-        if (POINT > end) and end > 0: 
-            break
-        elif POINT < begin:
-            continue
+        
 
-        sys.stderr.write("\t Reading frame %8d\r" %POINT)
+        if (ts.frame > end-1) and end > 0: 
+            break
+        elif ts.frame < begin:
+            continue
+        # elif (ts.frame-begin) % skip != 0:
+        #     continue
+
+        sys.stderr.write("\t Reading frame %8d\r" %ts.frame)
         sys.stderr.flush()
 
         for i,ai in list(enumerate(chose_group)):
-            traj_data[POINT-begin-1,i,0] = ts._x[ai-1]
-            traj_data[POINT-begin-1,i,1] = ts._y[ai-1]
-            traj_data[POINT-begin-1,i,2] = ts._z[ai-1]
+            traj_data[POINT,i,0] = ts._x[ai-1]
+            traj_data[POINT,i,1] = ts._y[ai-1]
+            traj_data[POINT,i,2] = ts._z[ai-1]
+        POINT += 1
 
  ########################
  #Add fitting code here. from matrix traj_data to a new matrix.
@@ -246,6 +313,7 @@ def Main(top_file,traj_file,index_file,temperature=300,skip=1,begin=0,end=-1,CYC
     ref_coor=traj_data[0,:,:]
     ref_com = np.array([sum(ref_coor[:,0])/natoms,sum(ref_coor[:,1])/natoms,sum(ref_coor[:,2])/natoms])
     ref_coordinates = ref_coor - ref_com
+    # print ref_coordinates
 
     for k in range(natoms):
         for l in range(3):
@@ -265,6 +333,7 @@ def Main(top_file,traj_file,index_file,temperature=300,skip=1,begin=0,end=-1,CYC
         traj_coor=traj_data[k,:,:]
         x_com = np.array([sum(traj_coor[:,0])/natoms,sum(traj_coor[:,1])/natoms,sum(traj_coor[:,2])/natoms])
         traj_coordinates = traj_coor - x_com
+
         rmsd[k] = qcp.CalcRMSDRotationalMatrix(ref_coordinates.T.astype(np.float64),
                                                traj_coordinates.T.astype(np.float64),
                                                natoms, rot, None)
@@ -286,9 +355,47 @@ def Main(top_file,traj_file,index_file,temperature=300,skip=1,begin=0,end=-1,CYC
         QHE(traj_data2,group_mass,temperature,nframes/CYCLES*(cycle+1))
 
 
+def File_input():
+    print "%6s   %10s   %12s  %s " %("Option","Type","Filename","Description")
+def Print_line():
+    print "-"*65
+def Show(Option,Type,value,description):
+    print "%6s   %10s   %12s  %s" %(Option,Type,value,description)
 
-def Usage():
-    print "Entro_Analysis.py -f <traj_file> -p <top_file> -n <index_file> -t [temperature] -b [begin frame] -e [end frame] -k [skip] -c [cycles]"
+# def Usage():
+#     print "Entro_Analysis.py -f <traj_file> -p <top_file> -n <index_file> -t [temperature] -b [begin frame] -e [end frame] -c [cycles]"
+
+def Usage(coor_file="coor_file",traj_file="traj_file",ndx_file="index.ndx",output_file="output_file",\
+        parm_file="para_analysis.in",skip=1,show_help="yes",\
+        calcu_helical="False", calcu_dihedral="False",\
+        calcu_rise="False",calcu_twist="False",calcu_rmsd="False",begin=0,end=-1):
+    '''
+    print the usage information.
+    '''
+    print ""
+    File_input()
+    Print_line()
+    Show("-p","Input",coor_file,"Structure file: gro pdb etc.")
+    Show("-f","Input",traj_file,"Trajectory: xtc trr.")
+    Show("-n","Input",ndx_file, "Index file.")
+
+    Print_line()
+    print ""
+    # usage.Type_input()
+    # usage.Print_line()
+    # usage.Show("--helical","bool",calcu_helical,"Calculate the helical parameters of nucleic acids.")
+    # usage.Show("--dihedral","bool",calcu_dihedral,"Calculate the backbone dihedral parameters of nucleic acids.")
+    # usage.Show("--rise","bool",calcu_rise,"Calculate the distance of DNA bases groups.")
+    # usage.Show("--twist","bool",calcu_twist,"Calculate the twist of DNA bases groups.")
+    # usage.Show("--rmsd","bool",calcu_rmsd,"Calculate the RMSD of DNA bases groups.")
+    # usage.Show("--begin","int",begin,"First frame (ps) to read from trajectory.")
+    # usage.Show("--end","int",end,"Last frame (ps) to read from trajectory.")
+    # usage.Show_skip(skip)
+    # usage.Show_help(show_help)
+    print ""
+
+
+
 
 def CheckArgs():
     if len(sys.argv) > 1:
@@ -296,7 +403,7 @@ def CheckArgs():
         top_file    =""
         index_file  =""
         temperature =300
-        skip        =1
+        # skip        =1
         begin_time  = 0
         end_time    = -1
         cycles      = 1
@@ -308,8 +415,8 @@ def CheckArgs():
                 top_file = b
             elif a == "-t":
                 temperature=int(b)
-            elif a == "-k":
-                skip = int(b)
+            # elif a == "-k":
+            #     skip = int(b)
             elif a == "-n":
                 index_file=b
             elif a == "-b":
@@ -321,7 +428,7 @@ def CheckArgs():
 
 
         if os.path.isfile(traj_file) and os.path.isfile(top_file) and os.path.isfile(index_file):
-            Main(top_file,traj_file,index_file,temperature,skip,begin_time,end_time,cycles)
+            Main(top_file,traj_file,index_file,temperature,begin_time,end_time,cycles)
     else:
         Usage()
         sys.exit()

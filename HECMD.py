@@ -18,7 +18,8 @@ import time as Time
 
 K= 1.3806504e-23
 '''It's the Boltzmann constant'''
-HBA= 1.05457148e-34
+HBA = 1.05457148e-34
+H   = 6.62606957e-34
 '''It's the Planck constant'''
 
 RC= 8.3145
@@ -138,8 +139,8 @@ def R_VALUE(prob,eig_value,bin_list,BINS):
     return _rxy
 
 
-def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7):
-    global HBA, K, MP, RC
+def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7,corr_items=10):
+    global HBA, H, K, MP, RC
 
     _mat_size = len(group_mass)
     traj_ave  = np.zeros((_mat_size),dtype=np.float32)
@@ -173,10 +174,10 @@ def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7):
             break
         elif eigenvalues[-1] > eigen_thr:
             truncate_num = _mat_size
-    print "\t Using %d eigenvalues to calculate entropy." %truncate_num
+    print "\t Using %d eigenvalues for calculating entropy." %truncate_num
         
     
-    # print "step 5: Calculating the quasiharmonic entropy, cycling %d" %cycle
+    print "step 5: Calculating the quasiharmonic entropy" 
 
     alpha_const  =HBA*(1e10)/math.sqrt(K*temperature*MP)
     alpha     =[alpha_const/math.sqrt(eigenvalues[i]) for i in range(truncate_num)]
@@ -192,7 +193,7 @@ def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7):
 ######################
     print "step 6: Calculating the anhormonic entropy"
    
-    _bp_temp = [eigenvectors[:,i]*group_mass for i in range(truncate_num)]   
+    _bp_temp = [eigenvectors[:,i]*group_mass for i in range(corr_items)]   
     _delta_temp= np.zeros((_mat_size,cycle_frame),dtype=np.float32)
     for i in range(cycle_frame):
         for j in range(_mat_size):
@@ -201,47 +202,50 @@ def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7):
     bp = np.array(bp)
     # for i in range(truncate_num):
         # np.savetxt("dist_%d.dat" %(i+1),bp[i])
-    anh=np.zeros([truncate_num],dtype=np.float32)
+    anh=np.zeros([corr_items],dtype=np.float32)
 
-    _beta_const = 0.5*(1-math.log(HBA**2/(K*temperature*2*math.pi)))
+    _beta_const = 0.5*(1-math.log(H*HBA/K/temperature))
     BIN_NUM = 100
-    rxy=np.zeros([truncate_num],dtype=np.float32)
+    # rxy=np.zeros([truncate_num],dtype=np.float32)
     
     # print _beta_const
-    for m in range(truncate_num):
+    for m in range(corr_items):
         _hist,_bins=np.histogram(bp[m],bins=np.linspace(np.amin(bp[m]),np.amax(bp[m]),BIN_NUM+1))   
-        _prob = [(_item)/sum([_hist[i]*(_bins[i+1]-_bins[i]) for i in range(len(_hist))]) for _item in _hist]
-        _int_prob = 0.0
-        for j in range(BIN_NUM):
-            if _prob[j] > 0.0:
-                _int_prob += math.log(_prob[i]*1e10/math.sqrt(MP))*_prob[j] *(_bins[i+1]-_bins[i])
-        # _int_prob =sum([math.log(_prob[i]*1e10/math.sqrt(MP))*_prob[i]*(_bins[i+1]-_bins[i]) for i in range(len(_hist))]) #care the unit
+        _sum_hist= sum([(_hist[i]+1.0/BIN_NUM)*(_bins[i+1]-_bins[i]) for i in range(BIN_NUM)])
+        _prob = [(_item+1.0/BIN_NUM)/_sum_hist for _item in _hist]
+        # _int_prob = 0.0
+        # for i,_prob_i in enumerate(_prob):
+        #     if _prob_i > 0.0:
+        #         _int_prob += math.log(_prob_i*1e10/math.sqrt(MP))*_prob_i *(_bins[i+1]-_bins[i])
+        _int_prob =sum([math.log(_prob[i]*1e10/math.sqrt(MP))*_prob[i]*(_bins[i+1]-_bins[i]) for i in range(len(_hist))]) #care the unit
 
-        rxy[m] = R_VALUE(_prob,eigenvalues[m],_bins,BIN_NUM)      
+        # rxy[m] = R_VALUE(_prob,eigenvalues[m],_bins,BIN_NUM)      
 
         anh[m] = _beta_const - _int_prob
     # print anh
-    np.savetxt("R_value.dat",rxy)
-    print "Writed R vaule to R_value.dat"
+    # np.savetxt("R_value.dat",rxy)
+    # print "Writed R vaule to R_value.dat"
     # np.savetxt('anh.dat',anh)     
     _delta_ah = 0.
-    for m in range(10):
-        _delta_ah += s_quantum[m] - anh[m]
+    for m in range(corr_items):
+        _delta_ah += anh[m] - s_quantum[m]
     Delta_ah = _delta_ah * RC
     print "\t Delta_anh: %8.2f J/mol/K, %8.2f Kcal/mol." %(Delta_ah, Delta_ah/4186.8*temperature)
-    print "After correction: %8.2f J/mol/K, %8.2f Kcal/mol." %(total_entropy- Delta_ah, (total_entropy-Delta_ah)/4186.8*temperature)
+    print "\t After correction: %8.2f J/mol/K, %8.2f Kcal/mol." %(total_entropy + Delta_ah, (total_entropy + Delta_ah)/4186.8*temperature)
 
 
     print "step 7: Calculating the pairwise correlation"
 
-    delta_pch = np.zeros((10,10),dtype=np.float32) # pairwise correlation for each unit
-    for m in range(10-1):
-        for n in range(m+1,10):
+    delta_pch = np.zeros((corr_items,corr_items),dtype=np.float32) # pairwise correlation for each unit
+    for m in range(corr_items-1):
+        for n in range(m+1,corr_items):
             delta_pch[m,n] = ( 2* _beta_const - histogram_2D(bp[m],bp[n],20) ) - anh[m] - anh[n]
-            print ( 2* _beta_const - histogram_2D(bp[m],bp[n],20) ),anh[m],anh[n]
+            # print ( 2* _beta_const - histogram_2D(bp[m],bp[n],20) ),anh[m],anh[n], delta_pch[m,n]
 
     Delta_pch = np.sum(delta_pch) * RC
-    print Delta_pch 
+    print "\t Delta_pch: %8.2f J/mol/K, %8.2f Kcal/mol." %(Delta_pch, Delta_pch/4186.8*temperature)
+    print "\t After correction: %8.2f J/mol/K, %8.2f Kcal/mol." %(total_entropy + Delta_ah+Delta_pch, \
+        (total_entropy + Delta_ah + Delta_pch)/4186.8*temperature)
 
 
 
@@ -256,16 +260,17 @@ def Main(top_file,traj_file,index_file,temperature=300,begin=0,end=-1,CYCLES=1):
     U       =MDAnalysis.Universe(top_file,traj_file)
     index   =Read_index_to_Inclass(index_file)
     Print_Index(index)
+
     while True:
         try:
-            solute_index=int(raw_input("Choose the group for entropy calculation:"))
+            solute_index=int(raw_input("Choosing the group for entropy calculation:"))
             break
         except:
             print "You should input a number."
             continue
     chose_group=index[solute_index].group_list
 #    print chose_group
-
+    print "\t Loading the trajectory file %s, please wait..." %(traj_file)
     if end== -1:
         nframes=(U.trajectory.numframes-begin)
     elif end > begin:
@@ -308,7 +313,7 @@ def Main(top_file,traj_file,index_file,temperature=300,begin=0,end=-1,CYCLES=1):
 
  ########################
  #Add fitting code here. from matrix traj_data to a new matrix.
-    # print "\nstep 2: Fitting the trajectory."
+    print "\nstep 2: Fitting the trajectory."
 
     ref_coor=traj_data[0,:,:]
     ref_com = np.array([sum(ref_coor[:,0])/natoms,sum(ref_coor[:,1])/natoms,sum(ref_coor[:,2])/natoms])
@@ -356,19 +361,18 @@ def Main(top_file,traj_file,index_file,temperature=300,begin=0,end=-1,CYCLES=1):
 
 
 def File_input():
-    print "%6s   %10s   %12s  %s " %("Option","Type","Filename","Description")
+    print "%10s   %8s   %20s    %s " %("Option","Type","Filename","Description")
 def Print_line():
     print "-"*65
 def Show(Option,Type,value,description):
-    print "%6s   %10s   %12s  %s" %(Option,Type,value,description)
+    print "%10s   %8s   %20s    %s" %(Option,Type,value,description)
 
 # def Usage():
 #     print "Entro_Analysis.py -f <traj_file> -p <top_file> -n <index_file> -t [temperature] -b [begin frame] -e [end frame] -c [cycles]"
 
-def Usage(coor_file="coor_file",traj_file="traj_file",ndx_file="index.ndx",output_file="output_file",\
-        parm_file="para_analysis.in",skip=1,show_help="yes",\
-        calcu_helical="False", calcu_dihedral="False",\
-        calcu_rise="False",calcu_twist="False",calcu_rmsd="False",begin=0,end=-1):
+def Usage(coor_file="coor_file",traj_file="traj_file",ndx_file="index.ndx",log_file="log_file",\
+    eigen_file = "",\
+    temperature=300.0,begin=0,end=-1,cycles=1):
     '''
     print the usage information.
     '''
@@ -378,57 +382,57 @@ def Usage(coor_file="coor_file",traj_file="traj_file",ndx_file="index.ndx",outpu
     Show("-p","Input",coor_file,"Structure file: gro pdb etc.")
     Show("-f","Input",traj_file,"Trajectory: xtc trr.")
     Show("-n","Input",ndx_file, "Index file.")
+    Show("-g","Output",log_file,"Log file.")
+    Show("-e","Output",eigen_file,"eigenvalues file.")
 
-    Print_line()
-    print ""
-    # usage.Type_input()
-    # usage.Print_line()
-    # usage.Show("--helical","bool",calcu_helical,"Calculate the helical parameters of nucleic acids.")
-    # usage.Show("--dihedral","bool",calcu_dihedral,"Calculate the backbone dihedral parameters of nucleic acids.")
-    # usage.Show("--rise","bool",calcu_rise,"Calculate the distance of DNA bases groups.")
-    # usage.Show("--twist","bool",calcu_twist,"Calculate the twist of DNA bases groups.")
-    # usage.Show("--rmsd","bool",calcu_rmsd,"Calculate the RMSD of DNA bases groups.")
-    # usage.Show("--begin","int",begin,"First frame (ps) to read from trajectory.")
-    # usage.Show("--end","int",end,"Last frame (ps) to read from trajectory.")
-    # usage.Show_skip(skip)
-    # usage.Show_help(show_help)
+    print 
+    Show("--begin","int",str(begin),"begin time.")
+    Show("--end","int",str(end),"end time.")
+    Show("--temp","float",str(temperature),"Kelvin temperature")
+    Show("--cycle","int",str(cycles),"Cycles for entropy calculation")
+
     print ""
 
+    if os.path.isfile(traj_file) and os.path.isfile(coor_file) and os.path.isfile(ndx_file):
+        Main(coor_file,traj_file,ndx_file,temperature,begin,end,cycles)
 
 
 
 def CheckArgs():
     if len(sys.argv) > 1:
-        traj_file   =""
-        top_file    =""
-        index_file  =""
+        traj_file   = ""
+        top_file    = ""
+        index_file  = ""
+        log_file    = ""
+        eigen_file  = ""
+
         temperature =300
         # skip        =1
         begin_time  = 0
         end_time    = -1
         cycles      = 1
-        opts,args=getopt.getopt(sys.argv[1:],"f:p:t:k:n:b:e:")
+        opts,args=getopt.getopt(sys.argv[1:],"f:p:g:t:n:b:e:",["begin=","end=","temp=","cycle="])
+
         for a,b in opts :
             if a =="-f":
                 traj_file = b
             elif a == "-p":
                 top_file = b
-            elif a == "-t":
-                temperature=int(b)
+            elif a == "--temp":
+                temperature=float(b)
             # elif a == "-k":
             #     skip = int(b)
             elif a == "-n":
                 index_file=b
-            elif a == "-b":
+            elif a == "--begin":
                 begin_time = int(b)
-            elif a == "-e":
+            elif a == "--end":
                 end_time = int(b)
-            elif a == "-c":
+            elif a == "--cycle":
                 cycles = int(b)
 
+        Usage(top_file,traj_file,index_file,log_file,eigen_file,temperature,begin_time,end_time,cycles)
 
-        if os.path.isfile(traj_file) and os.path.isfile(top_file) and os.path.isfile(index_file):
-            Main(top_file,traj_file,index_file,temperature,begin_time,end_time,cycles)
     else:
         Usage()
         sys.exit()

@@ -139,7 +139,7 @@ def R_VALUE(prob,eig_value,bin_list,BINS):
     return _rxy
 
 
-def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7,corr_items=10):
+def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7,corr_items=10,log_file=""):
     global HBA, H, K, MP, RC
 
     _mat_size = len(group_mass)
@@ -247,10 +247,17 @@ def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7,corr_item
     print "\t After correction: %8.2f J/mol/K, %8.2f Kcal/mol." %(total_entropy + Delta_ah+Delta_pch, \
         (total_entropy + Delta_ah + Delta_pch)/4186.8*temperature)
 
+    if log_file != "":
+        fp = open(log_file,"a")
+        fp.write("%d frames, Eqh= %8.2f Kcal/mol, Delta_Eah= %8.2f Kcal/mol, Delta_Epc= %8.2f Kcal/mol, Ecorr = %8.2f Kcal/mol\n" \
+            %(cycle_frame,total_entropy/4186.8*temperature, Delta_ah/4186.8*temperature, Delta_pch/4186.8*temperature,\
+                (total_entropy + Delta_ah + Delta_pch)/4186.8*temperature))
+        fp.close()
 
 
 
-def Main(top_file,traj_file,index_file,temperature=300,begin=0,end=-1,CYCLES=1):
+
+def Main(top_file,traj_file,index_file,log_file,eigen_file,temperature=300,begin=0,end=-1,CYCLES=1):
     '''
     Add some words here.
     '''
@@ -261,6 +268,11 @@ def Main(top_file,traj_file,index_file,temperature=300,begin=0,end=-1,CYCLES=1):
     index   =Read_index_to_Inclass(index_file)
     Print_Index(index)
 
+    fp = open(log_file,"w")
+    fp.write("Loading top_file   %s\n" %top_file)
+    fp.write("Loading traj file  %s\n" %traj_file)
+    fp.write("Loading index file %s\n" %index_file)
+
     while True:
         try:
             solute_index=int(raw_input("Choosing the group for entropy calculation:"))
@@ -269,6 +281,8 @@ def Main(top_file,traj_file,index_file,temperature=300,begin=0,end=-1,CYCLES=1):
             print "You should input a number."
             continue
     chose_group=index[solute_index].group_list
+
+    fp.write("Choose group %d, %s\n" %(solute_index,index[solute_index].group_name))
 #    print chose_group
     print "\t Loading the trajectory file %s, please wait..." %(traj_file)
     if end== -1:
@@ -285,6 +299,8 @@ def Main(top_file,traj_file,index_file,temperature=300,begin=0,end=-1,CYCLES=1):
 
     natoms  =len(chose_group)
     print "\t Reading %d frames from trajectory file: %s" %(nframes,traj_file)
+    fp.write("Reading %d frames from trajectory file: %s\n" %(nframes,traj_file))
+    fp.close()
     
     traj_data =np.zeros((nframes,natoms,3),dtype=np.float32)
     traj_data2=np.zeros((nframes,3*natoms),dtype=np.float32)
@@ -357,7 +373,7 @@ def Main(top_file,traj_file,index_file,temperature=300,begin=0,end=-1,CYCLES=1):
 
     group_mass =np.repeat([math.sqrt(U.atoms[i-1].mass) for i in chose_group],3) 
     for cycle in range(CYCLES):
-        QHE(traj_data2,group_mass,temperature,nframes/CYCLES*(cycle+1))
+        QHE(traj_data2,group_mass,temperature,nframes/CYCLES*(cycle+1),log_file=log_file)
 
 
 def File_input():
@@ -370,7 +386,7 @@ def Show(Option,Type,value,description):
 # def Usage():
 #     print "Entro_Analysis.py -f <traj_file> -p <top_file> -n <index_file> -t [temperature] -b [begin frame] -e [end frame] -c [cycles]"
 
-def Usage(coor_file="coor_file",traj_file="traj_file",ndx_file="index.ndx",log_file="log_file",\
+def Usage(coor_file="coor_file",traj_file="traj_file",ndx_file="index.ndx",log_file="entropy.log",\
     eigen_file = "",\
     temperature=300.0,begin=0,end=-1,cycles=1):
     '''
@@ -382,19 +398,19 @@ def Usage(coor_file="coor_file",traj_file="traj_file",ndx_file="index.ndx",log_f
     Show("-p","Input",coor_file,"Structure file: gro pdb etc.")
     Show("-f","Input",traj_file,"Trajectory: xtc trr.")
     Show("-n","Input",ndx_file, "Index file.")
-    Show("-g","Output",log_file,"Log file.")
-    Show("-e","Output",eigen_file,"eigenvalues file.")
+    Show("-g","Output",log_file,"Log file. Default is 'log'")
+    Show("-e","Output",eigen_file,"eigenvalues file. Default is None")
 
     print 
-    Show("--begin","int",str(begin),"begin time.")
-    Show("--end","int",str(end),"end time.")
-    Show("--temp","float",str(temperature),"Kelvin temperature")
-    Show("--cycle","int",str(cycles),"Cycles for entropy calculation")
+    Show("--begin","int",str(begin),"begin time. Default is 1")
+    Show("--end","int",str(end),"end time. Default is -1")
+    Show("--temp","float",str(temperature),"Kelvin temperature. Default is 300.0K")
+    Show("--cycle","int",str(cycles),"Cycles for entropy calculation. Default is 1.")
 
     print ""
 
     if os.path.isfile(traj_file) and os.path.isfile(coor_file) and os.path.isfile(ndx_file):
-        Main(coor_file,traj_file,ndx_file,temperature,begin,end,cycles)
+        Main(coor_file,traj_file,ndx_file,log_file,eigen_file,temperature,begin,end,cycles)
 
 
 
@@ -403,7 +419,7 @@ def CheckArgs():
         traj_file   = ""
         top_file    = ""
         index_file  = ""
-        log_file    = ""
+        log_file    = "log"
         eigen_file  = ""
 
         temperature =300
@@ -411,7 +427,7 @@ def CheckArgs():
         begin_time  = 0
         end_time    = -1
         cycles      = 1
-        opts,args=getopt.getopt(sys.argv[1:],"f:p:g:t:n:b:e:",["begin=","end=","temp=","cycle="])
+        opts,args=getopt.getopt(sys.argv[1:],"f:p:g:n:e:",["begin=","end=","temp=","cycle="])
 
         for a,b in opts :
             if a =="-f":
@@ -420,8 +436,10 @@ def CheckArgs():
                 top_file = b
             elif a == "--temp":
                 temperature=float(b)
-            # elif a == "-k":
-            #     skip = int(b)
+            elif a == "-g":
+                log_file = b
+            elif a == "-e":
+                eigen_file = b
             elif a == "-n":
                 index_file=b
             elif a == "--begin":

@@ -249,7 +249,7 @@ def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7,corr_item
 
     if log_file != "":
         fp = open(log_file,"a")
-        fp.write("%d frames, Eqh= %8.2f Kcal/mol, Delta_Eah= %8.2f Kcal/mol, Delta_Epc= %8.2f Kcal/mol, Ecorr = %8.2f Kcal/mol\n" \
+        fp.write("%10d frames, Eqh= %8.2f Kcal/mol, Delta_Eah= %8.2f Kcal/mol, Delta_Epc= %8.2f Kcal/mol, Ecorr = %8.2f Kcal/mol\n" \
             %(cycle_frame,total_entropy/4186.8*temperature, Delta_ah/4186.8*temperature, Delta_pch/4186.8*temperature,\
                 (total_entropy + Delta_ah + Delta_pch)/4186.8*temperature))
         fp.close()

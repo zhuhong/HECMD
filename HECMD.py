@@ -184,7 +184,7 @@ def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-6,corr_item
     try:
         s_quantum =[alpha[i]/(math.exp(alpha[i])-1) - math.log(1-math.exp(-alpha[i])) for i in range(truncate_num)]
     except:
-        print [math.exp(alpha[i]) for i in range(truncate_num)]
+        print "hello to see you again"
         sys.exit()
     # np.savetxt("quantum.dat",s_quantum)
     

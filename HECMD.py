@@ -139,7 +139,7 @@ def R_VALUE(prob,eig_value,bin_list,BINS):
     return _rxy
 
 
-def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7,corr_items=10,log_file=""):
+def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-6,corr_items=10,log_file=""):
     global HBA, H, K, MP, RC
 
     _mat_size = len(group_mass)
@@ -181,7 +181,11 @@ def QHE(traj_data2,group_mass,temperature,cycle_frame,eigen_thr = 1e-7,corr_item
 
     alpha_const  =HBA*(1e10)/math.sqrt(K*temperature*MP)
     alpha     =[alpha_const/math.sqrt(eigenvalues[i]) for i in range(truncate_num)]
-    s_quantum =[alpha[i]/(math.exp(alpha[i])-1) - math.log(1-math.exp(-alpha[i])) for i in range(truncate_num)]
+    try:
+        s_quantum =[alpha[i]/(math.exp(alpha[i])-1) - math.log(1-math.exp(-alpha[i])) for i in range(truncate_num)]
+    except:
+        print [math.exp(alpha[i]) for i in range(truncate_num)]
+        sys.exit()
     # np.savetxt("quantum.dat",s_quantum)
     
     total_entropy=sum(s_quantum)*RC
@@ -311,7 +315,7 @@ def Main(top_file,traj_file,index_file,log_file,eigen_file,temperature=300,begin
     for ts in U.trajectory:
         
 
-        if (ts.frame > end-1) and end > 0: 
+        if ts.frame > nframes + begin: 
             break
         elif ts.frame < begin:
             continue
